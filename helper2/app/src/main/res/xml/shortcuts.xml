@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 앱 아이콘을 길게 누르면 "통화 내용 자동 정리" 화면 (상태·권한·진단) -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="talk_status"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/sc_status"
+        android:shortcutLongLabel="@string/sc_status">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="kr.daedeok.calls"
+            android:targetClass="kr.daedeok.calls.TalkActivity" />
+    </shortcut>
+</shortcuts>

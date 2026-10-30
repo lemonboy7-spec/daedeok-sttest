@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 걸려 온 전화 목록(번호·시간·연락처 이름)만 읽음. 전화 걸기·문자는 하지 않음 -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <!-- 통화가 끝나면 "분류할 전화 N통" 알림 · 2.0: "통화 내용 보냄" 알림 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 폰을 다시 켠 뒤에도 알림이 계속 오도록 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 갤럭시 배터리 절약이 통화 후 작업을 막지 않도록 "제한 없음" 허용을 한 번 물음 (사용자가 직접 허용) -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- ===== 2.0: 통화 내용 자동 정리 ===== -->
+    <!-- 갤럭시가 자동 녹음한 통화 파일(Recordings/Call)을 읽음. 녹음 파일은 폰 밖으로 보내지 않음 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- 안드로이드 음성인식 규칙상 "마이크 권한"이 있어야 글자 변환이 돌아감. 이 앱은 마이크로 녹음하지 않음 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- 바꾼 '글자'만 내 정산유틸 서버(구글 Apps Script)로 보냄 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- (선택) "다른 앱 위에 표시": 통화가 끝나면 작은 정리 창을 스스로 띄워 손대지 않고 처리.
+         허용하지 않으면 "눌러서 정리" 알림으로 대신함 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- 안드로이드 11+: 정산유틸(크롬에 설치한 앱)을 찾아 그 앱으로 열기 위해 필요 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+        <package android:name="com.android.chrome" />
+        <package android:name="com.sec.android.app.sbrowser" />
+    </queries>
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:theme="@android:style/Theme.Translucent.NoTitleBar">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- 정산유틸 앱의 "통화 기록 가져오기" 버튼이 이 주소로 부름: ddkcalls://read -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="ddkcalls" />
+            </intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+        </activity>
+        <!-- 2.0: 통화 내용 자동 정리 — 상태·권한·진단 화면 (아이콘 길게 누르기) -->
+        <activity
+            android:name=".TalkActivity"
+            android:exported="false"
+            android:label="통화 내용 자동 정리"
+            android:theme="@android:style/Theme.DeviceDefault.DayNight"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden" />
+        <!-- 2.0: 통화가 끝난 뒤 잠깐 뜨는 작은 정리 창 (글자 변환은 화면에 떠 있는 앱만 할 수 있어서) -->
+        <activity
+            android:name=".AutoActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="kr.daedeok.calls.auto"
+            android:launchMode="singleTask"
+            android:label="통화 내용 정리"
+            android:theme="@android:style/Theme.DeviceDefault.Dialog.NoActionBar"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden" />
+        <!-- 음성 녹음 → ⋮ → 공유 → 텍스트 파일 → 대덕 전화분류 (손으로 보내기, 1.9와 같음) -->
+        <activity
+            android:name=".ShareActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:label="대덕 전화분류 (통화 내용)">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+        <service
+            android:name=".CallWatch"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- 2.0: 통화가 끝나면 녹음 찾기 → 글자로 → 보내기 -->
+        <service
+            android:name=".TalkJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <receiver android:name=".BootReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

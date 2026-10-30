@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">대덕 전화분류</string>
+    <!-- 정산유틸 앱 주소. 정산유틸의 "가져오기"가 알려 준 주소가 있으면 그것을 먼저 씀 -->
+    <string name="app_url">https://lemonboy7-spec.github.io/daedeok-app/</string>
+    <string name="sc_status">통화 내용 자동 정리</string>
+</resources>
