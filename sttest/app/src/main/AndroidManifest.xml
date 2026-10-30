@@ -4,6 +4,9 @@
     <!-- 통화 녹음 파일(오디오)만 읽음. 안드로이드 13 이상 -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- 안드로이드 음성인식(기본 방식)은 녹음 파일을 넣어도 "마이크 권한"을 확인함.
+         이 앱은 마이크로 녹음하지 않음 (0.1 오류: ERROR_TYPE_INSUFFICIENT_PERMISSION) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- 시험판은 인터넷을 쓰지 않음: 글자 변환은 폰 안(시스템 AI)에서만 함.
          라이브러리가 인터넷 권한을 끼워 넣어도 여기서 뺌 -->
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />

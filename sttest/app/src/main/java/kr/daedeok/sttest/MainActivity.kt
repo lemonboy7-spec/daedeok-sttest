@@ -35,6 +35,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -42,7 +43,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * 대덕 음성시험 0.1
+ * 대덕 음성시험 0.2 (0.1 → 마이크 권한 추가 · 되는 방식 자동 선택 · 넣는 방법 차례로 시도)
  * ① 통화 녹음 폴더(Recordings/Call)의 녹음 파일을 읽을 수 있는지
  * ② 폰 안 음성인식(구글 ML Kit, 한국어)이 이 폰에서 되는지
  * ③ 최근 통화 1건을 글자로 바꿔 보여주고 → 복사 / 대덕 전화분류로 보내기
@@ -101,7 +102,7 @@ class MainActivity : Activity() {
         setContentView(sv)
         window.statusBarColor = bg
 
-        root.addView(text("대덕 음성시험", 22f, ink, bold = true))
+        root.addView(text("대덕 음성시험 0.2", 22f, ink, bold = true))
         root.addView(text("폰 안에서 통화 녹음을 글자로 바꿔 보는 시험판입니다. 인터넷을 쓰지 않고, 녹음은 폰 밖으로 나가지 않습니다. 도우미(대덕 전화분류)와는 별개 앱이라 지워도 영향이 없습니다.", 14f, sub).also { it.setPadding(0, dp(4), 0, dp(8)) })
 
         // ① 녹음 파일
@@ -125,7 +126,7 @@ class MainActivity : Activity() {
         val c3 = section("③ 글자로 바꾸기")
         modeBtn = button("방식: 고급(Advanced) — 눌러서 바꾸기", secondary = true) {
             advanced = !advanced
-            modeBtn.text = if (advanced) "방식: 고급(Advanced) — 눌러서 바꾸기" else "방식: 기본(Basic) — 눌러서 바꾸기"
+            modeLabel()
         }
         c3.addView(modeBtn)
         runBtn = button("선택한 녹음 글자로 바꾸기") { if (job?.isActive == true) stopRun() else run() }
@@ -197,6 +198,11 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 3) {
+            if (hasMic()) { log("마이크 권한: 허용됨"); run() }
+            else { log("마이크 권한: 거부됨"); toast("안드로이드 음성인식은 마이크 권한이 있어야 돌아갑니다. 이 앱은 마이크로 녹음하지 않습니다. 설정 → 애플리케이션 → 대덕 음성시험 → 권한 → 마이크에서 허용해 주세요") }
+            return
+        }
         if (requestCode == 1) {
             if (hasAudioPerm()) { log("음악·오디오 권한: 허용됨"); scan() }
             else { log("음악·오디오 권한: 거부됨"); toast("'음악 및 오디오' 권한이 있어야 통화 녹음을 찾을 수 있습니다. 설정 → 애플리케이션 → 대덕 음성시험 → 권한에서 허용해 주세요") }
@@ -302,13 +308,18 @@ class MainActivity : Activity() {
                 }
             }
             statusView.text = lines.joinToString("\n")
+            // 고급이 안 되고 기본이 되면 기본으로 자동 선택
+            try { if (advanced && Stt.client(true).checkStatus() != FeatureStatus.AVAILABLE && Stt.client(false).checkStatus() == FeatureStatus.AVAILABLE) { advanced = false; modeLabel(); log("고급이 안 돼서 ③ 방식을 기본으로 자동 선택") } } catch (_: Throwable) {}
         }
     }
+
+    private fun modeLabel() { modeBtn.text = if (advanced) "방식: 고급(Advanced) — 눌러서 바꾸기" else "방식: 기본(Basic) — 눌러서 바꾸기" }
 
     private fun hint(t: Throwable): String {
         val s = t.toString()
         return when {
             s.contains("606") -> "  → 폰 AI가 아직 준비 중일 수 있음: 폰을 다시 켠 뒤 다시 시도"
+            s.contains("PERMISSION") -> "  → 마이크 권한이 필요합니다 (설정 → 애플리케이션 → 대덕 음성시험 → 권한 → 마이크 허용)"
             else -> ""
         }
     }
@@ -342,106 +353,114 @@ class MainActivity : Activity() {
         }
     }
 
+    // 안드로이드 음성인식은 마이크로 녹음하지 않아도 "마이크 권한"이 있어야 돌아감 (0.1 오류 ERROR_TYPE_INSUFFICIENT_PERMISSION)
+    private fun hasMic() = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
     private fun run() {
         val r = selected ?: run { toast("먼저 ①에서 녹음을 골라 주세요"); return }
-        val mode = advanced
-        val label = if (mode) "고급" else "기본"
+        if (!hasMic()) { log("마이크 권한 요청 (음성인식 규칙상 필요, 녹음은 하지 않음)"); requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 3); return }
         resultText = ""
         resultView.text = ""; resultView.visibility = View.VISIBLE
         runBtn.text = "멈추기"
         val t0 = SystemClock.elapsedRealtime()
         job = scope.launch {
-            val rec = Stt.client(mode)
-            var src: AudioSource? = null
-            var how: String
-            var feeder: Job? = null
-            var pipeRead: ParcelFileDescriptor? = null
-            val finals = StringBuilder()
-            var partial = ""
-            var gotError: String? = null
-            val ticker = launch {
-                while (isActive) {
-                    val el = (SystemClock.elapsedRealtime() - t0) / 1000
-                    progView.text = "글자로 바꾸는 중… ${el}초 지남 ($label, 녹음 ${fmtDur(r.durMs)})"
-                    delay(1000)
+            // 1) 방식: 고른 방식이 안 되면 되는 방식으로 자동
+            var mode = advanced
+            try {
+                if (Stt.client(mode).checkStatus() != FeatureStatus.AVAILABLE && Stt.client(!mode).checkStatus() == FeatureStatus.AVAILABLE) {
+                    mode = !mode; advanced = mode; modeLabel()
+                    log((if (mode) "기본" else "고급") + " 방식이 안 돼서 " + (if (mode) "고급" else "기본") + "으로 자동 전환")
                 }
-            }
+            } catch (_: Throwable) {}
+            val label = if (mode) "고급" else "기본"
+            val rec = Stt.client(mode)
+            val ticker = launch { while (isActive) { progView.text = "글자로 바꾸는 중… ${(SystemClock.elapsedRealtime() - t0) / 1000}초 지남 ($label, 녹음 ${fmtDur(r.durMs)})"; delay(1000) } }
+            val finals = StringBuilder()
+            var lastErr: String? = null
             try {
                 val st = rec.checkStatus()
-                if (st != FeatureStatus.AVAILABLE) {
-                    gotError = "$label 방식 상태가 '${Stt.statusName(st)}'입니다. ②에서 확인·내려받기를 먼저 해 주세요"
-                    return@launch
-                }
+                if (st != FeatureStatus.AVAILABLE) { lastErr = "$label 방식 상태: ${Stt.statusName(st)}"; return@launch }
                 val f = withContext(Dispatchers.IO) { copyToCache(r.uri, r.name) }
-                val made = Stt.fileSource(this@MainActivity, f, r.uri)
-                if (made != null) {
-                    src = made.first; how = "파일 통째로: " + made.second
-                } else {
-                    log("파일 통째로 넣기 불가 (${Stt.lastFactoryError ?: "해당 기능 없음"}) → 실시간 넣기로 대신함")
-                    val pipe = ParcelFileDescriptor.createPipe()
-                    pipeRead = pipe[0]
-                    src = AudioSource.fromPfd(pipe[0])
-                    how = "실시간 넣기(녹음 길이만큼 걸림)"
-                    val info = Pcm.Info()
-                    val me = coroutineContext[Job]
-                    feeder = launch(Dispatchers.IO) {
-                        try {
-                            Pcm.feed(this@MainActivity, r.uri, pipe[1], 1.0, { me?.isActive == true }, { _, _ -> }, info)
-                        } catch (t: Throwable) {
-                            withContext(Dispatchers.Main) { log("소리 풀기 오류: $t") }
-                        }
-                        withContext(Dispatchers.Main) { log("소리 넣기 끝: ${info.mime} ${info.inRate}Hz ${info.channels}ch ${"%.0f".format(info.seconds)}초") }
-                        delay(8000)
-                        try { rec.stopRecognition() } catch (_: Throwable) {}
-                    }
-                }
-                log("시작: $label · $how")
-                rec.startRecognition(speechRecognizerRequest { audioSource = src!! }).collect { resp ->
-                    when (resp) {
-                        is SpeechRecognizerResponse.FinalTextResponse -> {
-                            val s = resp.text.trim()
-                            if (s.isNotEmpty()) finals.append(s).append('\n')
-                            partial = ""
-                            resultText = finals.toString().trim()
-                            resultView.text = resultText
-                        }
-                        is SpeechRecognizerResponse.PartialTextResponse -> {
-                            partial = Stt.textOf(resp)
-                            resultView.text = (finals.toString() + partial).trim()
-                        }
-                        is SpeechRecognizerResponse.ErrorResponse -> {
-                            gotError = resp.toString()
-                            log("인식 오류: $resp" + hint(RuntimeException(resp.toString())))
-                        }
-                        is SpeechRecognizerResponse.CompletedResponse -> log("인식 완료 신호 받음")
-                        else -> {}
-                    }
+                // 2) 넣는 방법을 차례로: 파일 통째로 → 주소(Uri)로 → 실시간 넣기
+                for (kind in listOf("file", "uri", "pcm")) {
+                    if (!isActive) break
+                    val (txt, err) = attempt(if (kind == "file") rec else Stt.fresh(mode), kind, f, r, label)
+                    if (txt.isNotBlank()) { finals.append(txt); lastErr = err; break }
+                    lastErr = err
+                    if (err != null && err.contains("PERMISSION")) break // 권한 문제는 다른 방법도 똑같음
+                    if (err == "skip") continue
+                    log("→ 다른 방법으로 다시 시도")
                 }
             } catch (t: kotlinx.coroutines.CancellationException) {
                 throw t
             } catch (t: Throwable) {
-                gotError = t.toString()
-                log("오류: $t" + hint(t))
+                lastErr = t.toString(); log("오류: $t" + hint(t))
             } finally {
                 ticker.cancel()
-                feeder?.cancel()
-                try { (src as? java.io.Closeable)?.close() } catch (_: Throwable) {}
-                try { pipeRead?.close() } catch (_: Throwable) {}
-                if (partial.isNotBlank() && !finals.contains(partial)) finals.append(partial)
                 resultText = finals.toString().trim()
                 val el = (SystemClock.elapsedRealtime() - t0) / 1000
                 runBtn.text = "선택한 녹음 글자로 바꾸기"
                 if (resultText.isNotEmpty()) {
                     resultView.text = resultText
-                    progView.text = "끝 ✅ ${el}초 걸림 · ${resultText.length}글자 ($label)" + (gotError?.let { "\n중간 오류: $it" } ?: "")
-                    log("결과: ${el}초 · ${resultText.length}글자 · 녹음 ${fmtDur(r.durMs)}")
+                    progView.text = "끝 ✅ ${el}초 걸림 · ${resultText.length}글자 ($label)"
+                    log("결과: ${el}초 · ${resultText.length}글자 · 녹음 ${fmtDur(r.durMs)} · $label")
                 } else {
                     resultView.text = "(글자가 나오지 않았습니다)"
-                    progView.text = "글자 없음 ❌ ${el}초" + (gotError?.let { "\n$it" } ?: "")
-                    log("결과 없음: ${gotError ?: "오류 없이 빈 결과"}")
+                    val e = if (lastErr == "skip") null else lastErr
+                    progView.text = "글자 없음 ❌ ${el}초" + (e?.let { "\n$it" + hint(RuntimeException(it)) } ?: "")
+                    log("결과 없음: ${e ?: "오류 없이 빈 결과"}")
                 }
             }
         }
+    }
+
+    /** 한 가지 넣는 방법으로 인식. 돌려줌: (글자, 오류) · 그 방법이 라이브러리에 없으면 오류 "skip" */
+    private suspend fun attempt(rec: com.google.mlkit.genai.speechrecognition.SpeechRecognizer, kind: String, f: File, r: Rec, label: String): Pair<String, String?> = coroutineScope {
+        var src: AudioSource? = null
+        var feeder: Job? = null
+        var pipeRead: ParcelFileDescriptor? = null
+        val finals = StringBuilder()
+        var partial = ""
+        var err: String? = null
+        try {
+            val how: String
+            if (kind == "pcm") {
+                val pipe = ParcelFileDescriptor.createPipe()
+                pipeRead = pipe[0]
+                src = AudioSource.fromPfd(pipe[0])
+                how = "실시간 넣기(녹음 길이만큼 걸림)"
+                val info = Pcm.Info()
+                feeder = launch(Dispatchers.IO) {
+                    try { Pcm.feed(this@MainActivity, r.uri, pipe[1], 1.0, { isActive }, { _, _ -> }, info) } catch (t: Throwable) { withContext(Dispatchers.Main) { log("소리 풀기 오류: $t") } }
+                    withContext(Dispatchers.Main) { log("소리 넣기 끝: ${info.mime} ${info.inRate}Hz ${info.channels}ch ${"%.0f".format(info.seconds)}초") }
+                    delay(8000)
+                    try { rec.stopRecognition() } catch (_: Throwable) {}
+                }
+            } else {
+                val made = Stt.fileSource(this@MainActivity, f, r.uri, kind) ?: return@coroutineScope Pair("", "skip")
+                src = made.first; how = (if (kind == "file") "파일 통째로: " else "주소로: ") + made.second
+            }
+            log("시작: $label · $how")
+            rec.startRecognition(speechRecognizerRequest { audioSource = src!! }).collect { resp ->
+                when (resp) {
+                    is SpeechRecognizerResponse.FinalTextResponse -> { val s = resp.text.trim(); if (s.isNotEmpty()) finals.append(s).append('\n'); partial = ""; resultView.text = finals.toString().trim() }
+                    is SpeechRecognizerResponse.PartialTextResponse -> { partial = Stt.textOf(resp); resultView.text = (finals.toString() + partial).trim() }
+                    is SpeechRecognizerResponse.ErrorResponse -> { err = resp.toString(); log("인식 오류: $resp" + hint(RuntimeException(resp.toString()))) }
+                    is SpeechRecognizerResponse.CompletedResponse -> log("인식 완료 신호 받음")
+                    else -> {}
+                }
+            }
+        } catch (t: kotlinx.coroutines.CancellationException) {
+            throw t
+        } catch (t: Throwable) {
+            err = t.toString(); log("오류: $t" + hint(t))
+        } finally {
+            feeder?.cancel()
+            try { (src as? java.io.Closeable)?.close() } catch (_: Throwable) {}
+            try { pipeRead?.close() } catch (_: Throwable) {}
+        }
+        if (partial.isNotBlank() && !finals.contains(partial)) finals.append(partial)
+        Pair(finals.toString().trim(), err)
     }
 
     private fun copyToCache(uri: Uri, name: String): File {

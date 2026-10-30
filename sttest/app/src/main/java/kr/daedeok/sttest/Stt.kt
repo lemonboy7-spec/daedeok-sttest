@@ -30,6 +30,9 @@ object Stt {
         })
     }
 
+    /** 오류 뒤에는 엔진이 닫힐 수 있어서, 다시 시도할 때는 새로 만듦 */
+    fun fresh(advanced: Boolean): SpeechRecognizer { clients.remove(advanced)?.let { try { it.close() } catch (_: Throwable) {} }; return client(advanced) }
+
     fun closeAll() {
         for (c in clients.values) try { c.close() } catch (_: Throwable) {}
         clients.clear()
@@ -97,7 +100,7 @@ object Stt {
      * 녹음 파일을 통째로 넣는 방법을 찾음: fromFile(File) → fromFile(String) → fromUri(Context,Uri) → fromUri(Uri).
      * 없으면 null (→ PCM 실시간 넣기로 대신함).
      */
-    fun fileSource(ctx: Context, f: File, uri: Uri): Pair<AudioSource, String>? {
+    fun fileSource(ctx: Context, f: File, uri: Uri, kind: String = "any"): Pair<AudioSource, String>? {
         lastFactoryError = null
         val cands = factories()
         val order = listOf<(Method) -> Array<Any>?>(
@@ -106,7 +109,8 @@ object Stt {
             { m -> if (m.parameterTypes.size == 2 && Context::class.java.isAssignableFrom(m.parameterTypes[0]) && m.parameterTypes[1] == Uri::class.java) arrayOf(ctx, uri) else null },
             { m -> if (m.parameterTypes.size == 1 && m.parameterTypes[0] == Uri::class.java) arrayOf(uri) else null },
         )
-        for (pick in order) {
+        val picks = when (kind) { "file" -> order.take(2); "uri" -> order.drop(2); else -> order }
+        for (pick in picks) {
             for ((recv, m) in cands) {
                 val args = pick(m) ?: continue
                 try {
