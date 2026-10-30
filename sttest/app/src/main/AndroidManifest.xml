@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- 통화 녹음 파일(오디오)만 읽음. 안드로이드 13 이상 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- 시험판은 인터넷을 쓰지 않음: 글자 변환은 폰 안(시스템 AI)에서만 함.
+         라이브러리가 인터넷 권한을 끼워 넣어도 여기서 뺌 -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <!-- 결과를 도우미(대덕 전화분류)로 바로 보내기 위해 도우미가 깔려 있는지 확인 -->
+    <queries>
+        <package android:name="kr.daedeok.calls" />
+    </queries>
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
